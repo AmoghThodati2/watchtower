@@ -1,0 +1,160 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-void: #0A0E14;
+  --bg-panel: #11161E;
+  --bg-elevated: #1A2029;
+  --border-subtle: #1F2937;
+  --border-default: #2D3748;
+  --text-primary: #E8ECEF;
+  --text-secondary: #9CA3AF;
+  --text-tertiary: #6B7280;
+  --accent-cyan: #00D4FF;
+  --accent-amber: #FFB020;
+  --accent-red: #FF3838;
+  --accent-green: #00E676;
+  --accent-violet: #A78BFA;
+}
+
+* {
+  font-feature-settings: 'tnum' 1, 'ss01' 1;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Panel borders */
+.panel {
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-subtle);
+}
+
+/* Cesium overrides — hide all default UI */
+.cesium-viewer-toolbar,
+.cesium-viewer-animationContainer,
+.cesium-viewer-timelineContainer,
+.cesium-viewer-bottom,
+.cesium-viewer-fullscreenContainer,
+.cesium-infoBox,
+.cesium-selection-wrapper,
+.cesium-geocoder-container,
+.cesium-navigationHelpButton-wrapper,
+.cesium-viewer-geocoderContainer {
+  display: none !important;
+}
+
+.cesium-widget-credits {
+  display: none !important;
+}
+
+/* Agent reasoning text */
+.reasoning-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.reasoning-text .section-header {
+  color: var(--accent-violet);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #4A5568; }
+
+/* Tab underline active */
+[data-state="active"].tab-trigger {
+  border-bottom: 2px solid var(--accent-cyan);
+  color: var(--text-primary);
+}
+
+/* CDM queue item hover */
+.cdm-row {
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+.cdm-row:hover {
+  background: var(--bg-elevated);
+}
+.cdm-row.selected {
+  background: var(--bg-elevated);
+  box-shadow: inset 2px 0 0 var(--accent-cyan);
+}
+
+/* Pulse animation for critical alerts */
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(255, 56, 56, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(255, 56, 56, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 56, 56, 0); }
+}
+
+.pulse-red {
+  animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+/* Glow effects */
+.glow-cyan {
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.25);
+}
+.glow-red {
+  box-shadow: 0 0 12px rgba(255, 56, 56, 0.3);
+}
+
+/* Terminal log overlay */
+.terminal-line {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--accent-green);
+}
+
+/* Number formatting */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Badge */
+.badge-violet {
+  background: rgba(167, 139, 250, 0.15);
+  color: var(--accent-violet);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+}
+.badge-red {
+  background: rgba(255, 56, 56, 0.12);
+  color: var(--accent-red);
+  border: 1px solid rgba(255, 56, 56, 0.25);
+}
+.badge-amber {
+  background: rgba(255, 176, 32, 0.12);
+  color: var(--accent-amber);
+  border: 1px solid rgba(255, 176, 32, 0.25);
+}
+.badge-green {
+  background: rgba(0, 230, 118, 0.1);
+  color: var(--accent-green);
+  border: 1px solid rgba(0, 230, 118, 0.2);
+}
+.badge-cyan {
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+}
