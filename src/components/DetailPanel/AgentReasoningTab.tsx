@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { useStore } from '../../state/store';
 import { streamAgentReasoning } from '../../lib/agent';
 import { Conjunction, ManeuverOption } from '../../ontology/types';
@@ -9,49 +9,153 @@ type Props = {
   options: ManeuverOption[];
 };
 
-function ReasoningDisplay({ text }: { text: string }) {
-  // Parse structured sections
-  const formatted = text
-    .replace(/^(ASSESSMENT|KEY FACTORS|OPTIONS ANALYSIS|RECOMMENDATION|CONFIDENCE):/gm, '§§§$1:')
-    .split('§§§');
+// ── Parser ────────────────────────────────────────────────────────────────────
+// Handles both plain "SECTION:" and markdown-bold "**SECTION:**" output from the LLM.
+
+interface ParsedReasoning {
+  assessment: string;
+  keyFactors: string[];
+  optionsAnalysis: string;
+  recommendation: string;
+  confidence: number | null;
+}
+
+function parseReasoningText(text: string): ParsedReasoning {
+  // Strip all markdown bold/italic so **SECTION:** and SECTION: are treated identically.
+  const clean = text.replace(/\*\*/g, '').replace(/\*([^*\n]+)\*/g, '$1');
+
+  // Walk through every section header and capture the text between them.
+  const headerRe = /(?:^|\n)(ASSESSMENT|KEY FACTORS|OPTIONS ANALYSIS|RECOMMENDATION|CONFIDENCE)\s*:/gi;
+  const sections: Record<string, string> = {};
+  let lastKey = '';
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = headerRe.exec(clean)) !== null) {
+    if (lastKey) sections[lastKey] = clean.slice(lastIdx, match.index).trim();
+    lastKey = match[1].toUpperCase();
+    lastIdx = match.index + match[0].length;
+  }
+  if (lastKey) sections[lastKey] = clean.slice(lastIdx).trim();
+
+  // KEY FACTORS: split on newlines and strip bullet prefixes (-, •, *, ·)
+  const kfRaw = sections['KEY FACTORS'] ?? '';
+  const keyFactors = kfRaw
+    .split('\n')
+    .map((l) => l.replace(/^[\s\-•*·]+/, '').trim())
+    .filter(Boolean);
+
+  // CONFIDENCE: extract the first integer found
+  const confRaw = sections['CONFIDENCE'] ?? '';
+  const confNum = parseInt(confRaw.match(/\d+/)?.[0] ?? '', 10);
+
+  return {
+    assessment:     sections['ASSESSMENT']       ?? '',
+    keyFactors,
+    optionsAnalysis: sections['OPTIONS ANALYSIS'] ?? '',
+    recommendation: sections['RECOMMENDATION']   ?? '',
+    confidence:     isNaN(confNum) ? null : confNum,
+  };
+}
+
+// ── Shared section-header style ───────────────────────────────────────────────
+
+const headerStyle = {
+  fontFamily: '"JetBrains Mono", monospace',
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: '0.1em',
+  textTransform: 'uppercase' as const,
+  marginBottom: 8,
+};
+
+// ── Structured display ────────────────────────────────────────────────────────
+
+function ReasoningDisplay({ parsed, isStreaming }: { parsed: ParsedReasoning; isStreaming: boolean }) {
+  const hasContent =
+    parsed.assessment ||
+    parsed.keyFactors.length > 0 ||
+    parsed.optionsAnalysis ||
+    parsed.recommendation;
+
+  if (!hasContent) return null;
 
   return (
-    <div className="space-y-3">
-      {formatted.map((block, i) => {
-        if (!block.trim()) return null;
-        const colonIdx = block.indexOf(':');
-        if (colonIdx === -1 || colonIdx > 30) {
-          return (
-            <p key={i} className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-              {block}
-            </p>
-          );
-        }
-        const header = block.slice(0, colonIdx);
-        const body = block.slice(colonIdx + 1).trim();
-        return (
-          <div key={i}>
-            <div
-              className="text-xs font-semibold tracking-wider mb-1.5 font-mono"
-              style={{ color: 'var(--accent-violet)', letterSpacing: '0.08em' }}
-            >
-              {header}
-            </div>
-            <div
-              className="text-sm leading-relaxed whitespace-pre-wrap"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              {body}
-            </div>
-          </div>
-        );
-      })}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {/* ASSESSMENT */}
+      {parsed.assessment && (
+        <section>
+          <div style={{ ...headerStyle, color: 'var(--text-tertiary)' }}>Assessment</div>
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: 'var(--text-primary)' }}>
+            {parsed.assessment}
+          </p>
+        </section>
+      )}
+
+      {/* KEY FACTORS */}
+      {parsed.keyFactors.length > 0 && (
+        <section>
+          <div style={{ ...headerStyle, color: 'var(--text-tertiary)' }}>Key Factors</div>
+          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {parsed.keyFactors.map((factor, i) => (
+              <li key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <span style={{ color: 'var(--accent-cyan)', flexShrink: 0, lineHeight: 1.6, fontWeight: 700 }}>
+                  •
+                </span>
+                <span style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
+                  {factor}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* OPTIONS ANALYSIS */}
+      {parsed.optionsAnalysis && (
+        <section>
+          <div style={{ ...headerStyle, color: 'var(--text-tertiary)' }}>Options Analysis</div>
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
+            {parsed.optionsAnalysis}
+          </p>
+        </section>
+      )}
+
+      {/* RECOMMENDATION — callout card */}
+      {parsed.recommendation && (
+        <section style={{
+          background:   'rgba(0, 212, 255, 0.06)',
+          border:       '1px solid rgba(0, 212, 255, 0.3)',
+          borderLeft:   '4px solid var(--accent-cyan)',
+          borderRadius: '0 4px 4px 0',
+          padding:      12,
+        }}>
+          <div style={{ ...headerStyle, color: 'var(--accent-cyan)' }}>Recommendation</div>
+          <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: 'var(--text-primary)' }}>
+            {parsed.recommendation}
+          </p>
+        </section>
+      )}
+
+      {/* Streaming cursor — lives inside display so it trails the last section */}
+      {isStreaming && (
+        <span
+          className="inline-block w-0.5 h-4 animate-pulse"
+          style={{ background: 'var(--accent-violet)', verticalAlign: 'middle' }}
+        />
+      )}
     </div>
   );
 }
 
+// ── Confidence meter ──────────────────────────────────────────────────────────
+
 function ConfidenceMeter({ confidence }: { confidence: number }) {
-  const color = confidence >= 80 ? 'var(--accent-green)' : confidence >= 60 ? 'var(--accent-amber)' : 'var(--accent-red)';
+  const color =
+    confidence >= 80 ? 'var(--accent-green)'
+    : confidence >= 60 ? 'var(--accent-amber)'
+    : 'var(--accent-red)';
   return (
     <div className="flex flex-col items-center gap-1 shrink-0">
       <div className="relative w-14 h-14">
@@ -70,10 +174,12 @@ function ConfidenceMeter({ confidence }: { confidence: number }) {
           <span className="font-mono text-xs font-bold tabular" style={{ color }}>{confidence}</span>
         </div>
       </div>
-      <span className="text-xs" style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>CONFIDENCE</span>
+      <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>CONFIDENCE</span>
     </div>
   );
 }
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export function AgentReasoningTab({ conjunction, options }: Props) {
   const {
@@ -86,12 +192,17 @@ export function AgentReasoningTab({ conjunction, options }: Props) {
     failAgentReasoning,
   } = useStore();
 
-  const cdmId = conjunction.cdmId;
-  const state = agentState[cdmId] || 'IDLE';
+  const cdmId    = conjunction.cdmId;
+  const state    = agentState[cdmId]    || 'IDLE';
   const reasoning = agentReasoning[cdmId] || '';
-  const rec = recommendations[cdmId];
-  const endRef = useRef<HTMLDivElement>(null);
-  const [activeFactor, setActiveFactor] = useState<string | null>(null);
+  const rec      = recommendations[cdmId];
+  const endRef   = useRef<HTMLDivElement>(null);
+
+  // Parse once per render — single source of truth for both the meter and the display.
+  // This eliminates the mismatch where rec.confidence (derived in agent.ts via separate
+  // code paths) could differ from the CONFIDENCE number actually in the rendered text.
+  const parsed = useMemo(() => parseReasoningText(reasoning), [reasoning]);
+  const meterConfidence = parsed.confidence ?? rec?.confidence ?? null;
 
   useEffect(() => {
     if (endRef.current && state === 'STREAMING') {
@@ -102,19 +213,19 @@ export function AgentReasoningTab({ conjunction, options }: Props) {
   const handleInvoke = async () => {
     if (state === 'STREAMING') return;
     startAgentStream(cdmId);
-
     await streamAgentReasoning(
       conjunction,
       options,
       (chunk) => appendAgentReasoning(cdmId, chunk),
-      (rec) => completeAgentReasoning(cdmId, rec),
-      () => failAgentReasoning(cdmId)
+      (r)     => completeAgentReasoning(cdmId, r),
+      ()      => failAgentReasoning(cdmId),
     );
   };
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -128,47 +239,21 @@ export function AgentReasoningTab({ conjunction, options }: Props) {
                   <div
                     key={i}
                     className="w-1 h-1 rounded-full"
-                    style={{
-                      background: 'var(--accent-violet)',
-                      animation: `pulse 1.2s ${i * 0.2}s infinite`,
-                    }}
+                    style={{ background: 'var(--accent-violet)', animation: `pulse 1.2s ${i * 0.2}s infinite` }}
                   />
                 ))}
               </div>
             )}
-            {state === 'DONE' && (
-              <CheckCircle2 size={12} style={{ color: 'var(--accent-green)' }} />
-            )}
-            {state === 'ERROR' && (
-              <AlertCircle size={12} style={{ color: 'var(--accent-amber)' }} />
-            )}
+            {state === 'DONE'  && <CheckCircle2 size={12} style={{ color: 'var(--accent-green)' }} />}
+            {state === 'ERROR' && <AlertCircle  size={12} style={{ color: 'var(--accent-amber)' }} />}
           </div>
-          {rec && <ConfidenceMeter confidence={rec.confidence} />}
+          {meterConfidence !== null && <ConfidenceMeter confidence={meterConfidence} />}
         </div>
-
-        {/* Citation chips */}
-        {rec && rec.citedFactors.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {rec.citedFactors.map((f) => (
-              <button
-                key={f}
-                onClick={() => setActiveFactor(activeFactor === f ? null : f)}
-                className="px-2 py-0.5 rounded text-xs transition-colors"
-                style={{
-                  background: activeFactor === f ? 'rgba(167, 139, 250, 0.2)' : 'rgba(167, 139, 250, 0.08)',
-                  color: 'var(--accent-violet)',
-                  border: '1px solid rgba(167, 139, 250, 0.2)',
-                }}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Reasoning content */}
+      {/* ── Body ───────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto p-4">
+
         {state === 'IDLE' && (
           <div className="flex flex-col items-center justify-center h-full gap-4">
             <div
@@ -203,13 +288,7 @@ export function AgentReasoningTab({ conjunction, options }: Props) {
 
         {(state === 'STREAMING' || state === 'DONE' || state === 'ERROR') && reasoning && (
           <div>
-            <ReasoningDisplay text={reasoning} />
-            {state === 'STREAMING' && (
-              <span
-                className="inline-block w-0.5 h-4 ml-0.5 animate-pulse"
-                style={{ background: 'var(--accent-violet)', verticalAlign: 'middle' }}
-              />
-            )}
+            <ReasoningDisplay parsed={parsed} isStreaming={state === 'STREAMING'} />
             <div ref={endRef} />
           </div>
         )}
@@ -230,7 +309,7 @@ export function AgentReasoningTab({ conjunction, options }: Props) {
         )}
       </div>
 
-      {/* Re-invoke button when done */}
+      {/* ── Re-invoke footer ───────────────────────────────────────────────── */}
       {(state === 'DONE' || state === 'ERROR') && (
         <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border-subtle)' }}>
           <button

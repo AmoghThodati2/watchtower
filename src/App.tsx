@@ -62,8 +62,8 @@ export default function App() {
           <CdmQueue />
         </div>
 
-        {/* Globe — fills remaining space */}
-        <div className="flex-1 relative overflow-hidden">
+        {/* Globe — fills all remaining space between the two rails */}
+        <div style={{ flex: '1 1 0', position: 'relative', overflow: 'hidden', minWidth: 0 }}>
           <WatchtowerGlobe />
         </div>
 

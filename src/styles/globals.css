@@ -42,6 +42,15 @@ body {
   border-right: 1px solid var(--border-subtle);
 }
 
+/* Cesium sizing — .cesium-viewer has no explicit height by default,
+   which breaks the 100% height chain for the canvas */
+.cesium-viewer,
+.cesium-viewer-cesiumWidgetContainer,
+.cesium-widget {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 /* Cesium overrides — hide all default UI */
 .cesium-viewer-toolbar,
 .cesium-viewer-animationContainer,
